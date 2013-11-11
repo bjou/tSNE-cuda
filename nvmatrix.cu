@@ -6,7 +6,7 @@
  */
 #include <assert.h>
 #include <cublas.h>
-#include <cutil_inline.h>
+#include <helper_cuda.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <fstream>
@@ -28,12 +28,12 @@ unsigned long long *NVMatrix::devRndWords;
 
 void NVMatrix::initDeviceProps() {
     int deviceCount;
-    cutilSafeCall(cudaGetDeviceCount(&deviceCount));
+    checkCudaErrors(cudaGetDeviceCount(&deviceCount));
     if (deviceCount == 0) {
         printf("There is no device supporting CUDA\n");
         exit(EXIT_FAILURE);
     }
-    cutilSafeCall(cudaGetDeviceProperties(&deviceProps, 0));
+    checkCudaErrors(cudaGetDeviceProperties(&deviceProps, 0));
 }
 
 void NVMatrix::_init(unsigned int numRows, unsigned int numCols) {
@@ -236,7 +236,7 @@ void NVMatrix::apply(NVMatrix::FUNCTIONS f, NVMatrix& target, int numBlocks, int
 		kStudent<<<grid, threads>>>(_devData, target._devData, _numElements);
 	}
 
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::apply(NVMatrix::FUNCTIONS f, int numBlocks, int numThreadsPerBlock) {
@@ -266,32 +266,32 @@ void NVMatrix::initRandom(unsigned int seed) {
     }
     inFile.close();
 
-    cutilSafeCall(cudaMalloc((void **)&devRndMults, NUM_RND_STREAMS * sizeof(unsigned int)));
-    cutilSafeCall(cudaMalloc((void **)&devRndWords, NUM_RND_STREAMS * sizeof(unsigned long long)));
-    cutilSafeCall(cudaMemcpy(devRndMults, hostRndMults, NUM_RND_STREAMS * sizeof(unsigned int), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMalloc((void **)&devRndMults, NUM_RND_STREAMS * sizeof(unsigned int)));
+    checkCudaErrors(cudaMalloc((void **)&devRndWords, NUM_RND_STREAMS * sizeof(unsigned long long)));
+    checkCudaErrors(cudaMemcpy(devRndMults, hostRndMults, NUM_RND_STREAMS * sizeof(unsigned int), cudaMemcpyHostToDevice));
 
     kSeedRandom<<<NUM_RND_BLOCKS, NUM_RND_THREADS_PER_BLOCK>>>(devRndMults, devRndWords, seed);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
     rndInitialized = true;
 }
 
 void NVMatrix::destroyRandom() {
     assert(rndInitialized);
-    cutilSafeCall(cudaFree(devRndMults));
-    cutilSafeCall(cudaFree(devRndWords));
+    checkCudaErrors(cudaFree(devRndMults));
+    checkCudaErrors(cudaFree(devRndWords));
     rndInitialized = false;
 }
 
 void NVMatrix::binarizeProbs() {
     assert(rndInitialized);
     kBinarizeProbs<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(devRndMults, devRndWords, _devData,_numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::randomizeUniform() {
     assert(rndInitialized);
     kRandomUniform<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(devRndMults, devRndWords, _devData,_numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::randomizeGaussian() {
@@ -301,7 +301,7 @@ void NVMatrix::randomizeGaussian() {
 void NVMatrix::randomizeGaussian(float stdev) {
     assert(rndInitialized);
     kRandomGaussian<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(devRndMults, devRndWords, _devData, stdev, _numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::addGaussianNoise() {
@@ -312,7 +312,7 @@ void NVMatrix::addGaussianNoise(float stdev) {
     assert(rndInitialized);
     assert(_numElements % 2 == 0);
     kAddGaussianNoise<<<NUM_RND_BLOCKS,NUM_RND_THREADS_PER_BLOCK>>>(devRndMults, devRndWords, _devData,stdev,_numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::biggerThanScalar(float scalar) {
@@ -320,7 +320,7 @@ void NVMatrix::biggerThanScalar(float scalar) {
 }
 void NVMatrix::biggerThanScalar(float scalar, NVMatrix& target) {
     kBiggerThanScalar<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData,scalar,target._devData,_numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::biggerThan(NVMatrix& m, NVMatrix& target, int numBlocks, int numThreadsPerBlock) {
@@ -331,7 +331,7 @@ void NVMatrix::biggerThan(NVMatrix& m, NVMatrix& target, int numBlocks, int numT
                 m._devData + elementsDone, target._devData + elementsDone,
                 _numElements - elementsDone);
     }
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::biggerThan(NVMatrix& m, int numBlocks, int numThreadsPerBlock) {
@@ -470,7 +470,7 @@ void NVMatrix::copy(NVMatrix &dest, int srcStartRow, int srcEndRow,
                 kCopyTransFast<false><<<gridSize, blockSize>>>(&destStartPtr[numRowsCopied * destJumpWidth],
                         &srcStartPtr[numRowsCopied], copyWidth, copyHeight - numRowsCopied, destJumpWidth, srcJumpWidth);
             }
-            cutilCheckMsg("copy: Kernel execution failed");
+            getLastCudaError("copy: Kernel execution failed");
             numRowsCopied += gridSize.y * ADD_BLOCK_SIZE;
             gridSize.y = std::max(1, std::min(DIVUP(copyHeight-numRowsCopied, ADD_BLOCK_SIZE), NUM_BLOCKS_MAX));
         }
@@ -507,7 +507,7 @@ void NVMatrix::flipTrans() {
     dim3 gridSize(numBlocksX, numBlocksY, 1);
     dim3 blockSize(ADD_BLOCK_SIZE, ADD_BLOCK_SIZE, 1);
     kTranspose<<<gridSize, blockSize>>>(_devData, meTrans->_devData, width, height);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 
     copyFromDevice(*meTrans);
     this->_isTrans = !this->_isTrans;
@@ -540,7 +540,7 @@ void NVMatrix::squaredDiff(NVMatrix& b, NVMatrix& target) {
             } else {
                 kSquaredDiffTransFast<false><<<gridSize, blockSize>>>(aData, bData, destData, width, height - numRowsAdded, height);
             }
-            cutilCheckMsg("Kernel execution failed");
+            getLastCudaError("Kernel execution failed");
             numRowsAdded += gridSize.y * ADD_BLOCK_SIZE;
             gridSize.y = std::max(1, std::min(DIVUP(height-numRowsAdded, ADD_BLOCK_SIZE), NUM_BLOCKS_MAX));
             aData += numRowsAdded * width;
@@ -550,7 +550,7 @@ void NVMatrix::squaredDiff(NVMatrix& b, NVMatrix& target) {
     } else {
 //        printf("calling plain sq diff\n");
         kSquaredDiff<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, b._devData, target._devData,_numElements);
-        cutilCheckMsg("Kernel execution failed");
+        getLastCudaError("Kernel execution failed");
     }
 }
 
@@ -608,7 +608,7 @@ void NVMatrix::addSum(NVMatrix& b, NVMatrix& c, float scaleThis, float scaleB, f
                     }
                 }
             }
-            cutilCheckMsg("Kernel execution failed");
+            getLastCudaError("Kernel execution failed");
             numRowsAdded += gridSize.y * ADD_BLOCK_SIZE;
             gridSize.y = std::max(1, std::min(DIVUP((height-numRowsAdded) , ADD_BLOCK_SIZE), NUM_BLOCKS_MAX));
             aData += numRowsAdded * width;
@@ -618,7 +618,7 @@ void NVMatrix::addSum(NVMatrix& b, NVMatrix& c, float scaleThis, float scaleB, f
     } else {
         kAdd3<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, b._devData, c._devData,
                                                                           _numElements, scaleThis, scaleB, scaleC);
-        cutilCheckMsg("Kernel execution failed");
+        getLastCudaError("Kernel execution failed");
     }
 }
 
@@ -651,7 +651,7 @@ void NVMatrix::add(NVMatrix& b, float scaleA, float scaleB, NVMatrix& target) {
                         &b._devData[numRowsAdded], &target._devData[numRowsAdded * width],
                         width, height - numRowsAdded, height, scaleA, scaleB);
             }
-            cutilCheckMsg("Kernel execution failed");
+            getLastCudaError("Kernel execution failed");
             numRowsAdded += gridSize.y * ADD_BLOCK_SIZE;
             gridSize.y = std::max(1, std::min(DIVUP(height-numRowsAdded, ADD_BLOCK_SIZE), NUM_BLOCKS_MAX));
         }
@@ -723,14 +723,14 @@ void NVMatrix::eltWiseMult(NVMatrix& b, NVMatrix& target) {
                                                             &b._devData[numRowsProcessed], &target._devData[numRowsProcessed * width],
                                                             width, height - numRowsProcessed, height);
             }
-            cutilCheckMsg("Kernel execution failed");
+            getLastCudaError("Kernel execution failed");
             numRowsProcessed += gridSize.y * ADD_BLOCK_SIZE;
             gridSize.y = std::min(DIVUP(height-numRowsProcessed, ADD_BLOCK_SIZE), NUM_BLOCKS_MAX);
         }
 //        }
     } else {
         kMult<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, b._devData, target._devData,_numElements);
-        cutilCheckMsg("Kernel execution failed");
+        getLastCudaError("Kernel execution failed");
     }
 }
 
@@ -764,14 +764,14 @@ void NVMatrix::eltWiseDivide(NVMatrix& b, NVMatrix& target) {
                                                             &b._devData[numRowsProcessed], &target._devData[numRowsProcessed * width],
                                                             width, height - numRowsProcessed, height);
             }
-            cutilCheckMsg("Kernel execution failed");
+            getLastCudaError("Kernel execution failed");
             numRowsProcessed += gridSize.y * ADD_BLOCK_SIZE;
             gridSize.y = std::min(DIVUP(height-numRowsProcessed, ADD_BLOCK_SIZE), NUM_BLOCKS_MAX);
         }
 //        }
     } else {
         kDivide<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, b._devData, target._devData,_numElements);
-        cutilCheckMsg("Kernel execution failed");
+        getLastCudaError("Kernel execution failed");
     }
 }
 
@@ -788,7 +788,7 @@ void NVMatrix::tile(int timesY, int timesX, NVMatrix& target) {
     } else {
         kTile<<<NUM_APPLY_BLOCKS,NUM_APPLY_THREADS_PER_BLOCK>>>(_devData, target._devData, _numRows, _numCols, target._numRows, target._numCols);
     }
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::addVector(NVMatrix& vec, float scaleVec, NVMatrix& target) {
@@ -809,7 +809,7 @@ void NVMatrix::addVector(NVMatrix& vec, float scaleVec, NVMatrix& target) {
     } else {
         kAddRowVector<<<NUM_ADD_VECTOR_BLOCKS,NUM_ADD_VECTOR_THREADS_PER_BLOCK>>>(_devData, vec._devData, target._devData, width, height, scaleVec);
     }
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::addVector(NVMatrix& vec) {
@@ -840,7 +840,7 @@ void NVMatrix::equalsVector(NVMatrix& vec, NVMatrix& target) {
     } else {
         kEqualsRowVector<<<NUM_ADD_VECTOR_BLOCKS,NUM_ADD_VECTOR_THREADS_PER_BLOCK>>>(_devData, vec._devData, target._devData, width, height);
     }
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::equalsVector(NVMatrix& vec) {
@@ -850,7 +850,7 @@ void NVMatrix::equalsVector(NVMatrix& vec) {
 void NVMatrix::subtractFromScalar(float scalar, NVMatrix& target) {
     target.resize(*this);
     kSubtractFromScalar<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, scalar, target._devData,_numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::subtractFromScalar(float scalar) {
@@ -860,7 +860,7 @@ void NVMatrix::subtractFromScalar(float scalar) {
 void NVMatrix::addScalar(float scalar, NVMatrix& target) {
     target.resize(*this);
     kAddScalar<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, scalar, target._devData,_numElements);
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::addScalar(float scalar) {
@@ -883,7 +883,7 @@ void NVMatrix::eltWiseMultByVector(NVMatrix& vec, NVMatrix& target) {
     } else {
         kMultByRowVector<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, vec._devData, target._devData, width, height);
     }
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::eltWiseMultByVector(NVMatrix& vec) {
@@ -921,7 +921,7 @@ void NVMatrix::eltWiseDivideByVector2(NVMatrix& vec, NVMatrix& target) {
     } else {
         kDivideByRowVector<<<NUM_VECTOR_OP_BLOCKS,NUM_VECTOR_OP_THREADS_PER_BLOCK>>>(_devData, vec._devData, target._devData, width, height);
     }
-    cutilCheckMsg("Kernel execution failed");
+    getLastCudaError("Kernel execution failed");
 }
 
 void NVMatrix::scale(float scale) {
@@ -1045,7 +1045,7 @@ void NVMatrix::aggregate(int axis, NVMatrix& target, int numThreadsPerBlock, NVM
         } else if(agg == NVMatrix::SUM) {
             kDumbSumCols<<<numBlocks,numThreadsPerBlock>>>(_devData, target._devData, width, height);
         }
-        cutilCheckMsg("Kernel execution failed");
+        getLastCudaError("Kernel execution failed");
     } else { // row sum
         target.resize(_isTrans ? 1 : _numRows, _isTrans ? _numCols : 1);
         if (width > 1) {
@@ -1157,7 +1157,7 @@ void NVMatrix::aggregate(int axis, NVMatrix& target, int numThreadsPerBlock, NVM
                                 width, height, nvSumAccum->getLeadingDim());
                     }
                 }
-                cutilCheckMsg("Kernel execution failed");
+                getLastCudaError("Kernel execution failed");
                 cudaThreadSynchronize();
                 width = numBlocksX;
 

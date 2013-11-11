@@ -24,7 +24,7 @@ void tsne(float* inp_P, unsigned int N, float* mappedX, unsigned int no_dims) {
 	float eta = 500.0f;
 	
     /* Fire up cublas */
-    cutilSafeCall(cudaSetDevice(cutGetMaxGflopsDeviceId()));
+    checkCudaErrors(cudaSetDevice(gpuGetMaxGflopsDeviceId()));
     cublasStatus status = cublasInit();
     if(status != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "!!!! cublas initialization failed\n");
@@ -33,10 +33,10 @@ void tsne(float* inp_P, unsigned int N, float* mappedX, unsigned int no_dims) {
     NVMatrix::initRandom(time(0));
 
     /* Print memory information */
-    unsigned int freeMem, totalMem;
-    cuMemGetInfo(&freeMem, &totalMem);
+    size_t freeMem, totalMem;
+    cudaMemGetInfo(&freeMem, &totalMem);
     fprintf(stdout, "Running CUDA implementation of t-SNE...\n");
-    fprintf(stdout, " - GPU memory is %d bytes (%d available).\n", totalMem, freeMem);
+    fprintf(stdout, " - GPU memory is %d bytes (%d available).\n", static_cast<unsigned int>(totalMem), static_cast<unsigned int>(freeMem));
     fprintf(stdout, " - NOTE: This implementation does not show intermediate plots.\n");
 
     /* Copy data onto device, and make sure it is normalized */
