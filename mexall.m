@@ -40,7 +40,7 @@ function mexall(CUDA_LIB_PATH, CUTIL_INC_PATH)
     for i=1:length(filenames)
         mexCommandLine = [mexCommandLine '''' filenames{i} '.o'', '];
     end
-    mexCommandLine = [mexCommandLine '''-L' CUDA_LIB_PATH ''', ''-lcuda -lcudart -lcufft -lcublas -Wl,-rpath,' CUDA_LIB_PATH ''')'];
+    mexCommandLine = [mexCommandLine '''-L' CUDA_LIB_PATH ''', ''-lcuda -lcudart -lcufft -lcublas -I. -Wl,-rpath,' CUDA_LIB_PATH ''')'];
     eval(mexCommandLine);
 
     % Clean up object files
